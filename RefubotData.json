@@ -1,0 +1,584 @@
+{
+  "name": "Asistente Virtual de data Refugio v3",
+  "nodes": [
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT \n  CASE \n    WHEN jsonb_array_length(history) > 20 \n    THEN history -> -20 \n    ELSE history \n  END as history\nFROM conversation_memory_refubot \nWHERE chat_id = $1",
+        "options": {
+          "queryReplacement": "={{ $json.message.chat.id }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        736,
+        -96
+      ],
+      "id": "914f64c6-80cf-40be-8265-a255b1f8d0a7",
+      "name": "Cargar Memoria",
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "LsXN9NioUiz1tmgm",
+          "name": "Postgres account 3"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Preparar contexto completo para el agente\nconst telegram = $input.first().json;\nconst memory = $('Cargar Memoria').first().json;\n\nconst chatId = telegram.message?.chat?.id;\nconst userName = telegram.message?.from?.first_name || 'Usuario';\nconst userMessage = telegram.message?.text;\nconst history = memory?.history || [];\n\n// Formatear historial legible\nlet historyText = 'Sin historial previo.';\nif (history.length > 0) {\n  historyText = history.slice(-10).map(msg => \n    `${msg.role === 'user' ? '👤 Usuario' : '🤖 Refubot'}: ${msg?.content}`\n  ).join('\\n\\n');\n}\n\n// Fecha actual en formato peruano\nconst now = new Date();\nconst peruDate = new Intl.DateTimeFormat('es-PE', {\n  timeZone: 'America/Lima',\n  year: 'numeric',\n  month: '2-digit',\n  day: '2-digit'\n}).format(now);\n\nreturn [{\n  chatId: chatId,\n  userName: userName,\n  userMessage: userMessage,\n  history: history,\n  historyText: historyText,\n  currentDate: peruDate,\n  timezone: 'America/Lima'\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        912,
+        208
+      ],
+      "id": "ae36598f-9737-489e-8232-ca4c234815be",
+      "name": "Preparar Contexto"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $('Telegram Trigger1').item.json.message.text }}",
+        "hasOutputParser": true,
+        "options": {
+          "systemMessage": "=# IDENTIDAD\nEres **Refubot** 🤖, asistente de datos del **Parque Gastronómico Refugio**. Consultas BigQuery para responder sobre ventas y flujo de personas.\n\n---\n\n# SESIÓN\n- **Fecha**: {{ $json.currentDate }}\n- **Usuario**: {{ $('Telegram Trigger1').item.json.message.chat.first_name }}\n- **Chat ID**: {{ $('Telegram Trigger1').item.json.message.chat.id }}\n- **Timezone**: America/Lima\n\n{{ $json.historyText }}\n\n---\n\n# ALCANCE\n\n| ✅ Respondo | ❌ No respondo |\n|-------------|----------------|\n| 💰 Ventas (montos, productos, negocios) | Reservaciones |\n| 📊 Métricas (ticket promedio, rankings) | Datos de empleados |\n| 🚶 Flujo personas (entradas, aforo) | Predicciones |\n| 📅 Consultas temporales | Temas no relacionados |\n\n---\n\n# DATOS BigQuery\n\n**Proyecto**: `neat-chain-450900-a1`\n\n## Tablas\n\n### `Ventas.sales_df`\n| Campo | Tipo | Nota |\n|-------|------|------|\n| Fecha | STRING | ⚠️ Usar DATE() |\n| CodigoTransaccion | STRING | ID único |\n| CodigoNegocio | STRING | FK → Negocios |\n| CodigoUbicacion | STRING | Ubicación |\n| Producto | STRING | Nombre producto |\n| Monto | FLOAT64 | Valor en S/. |\n| Cantidad | FLOAT64 | Unidades |\n| Area | FLOAT64 | Área |\n| Cliente | STRING | Cliente |\n| Estado | STRING | ⚠️ Filtrar '0' o '0.0' |\n| EstadoNegocio | STRING | Estado del negocio |\n| FechaCarga | STRING | Fecha de carga |\n| FechaHora | STRING | Fecha y hora |\n| FechaIntegrada | STRING | Fecha integrada |\n| FormaPago | STRING | Forma de pago |\n| FormaPagoModificado | STRING | Forma pago modificada |\n| Hora | STRING | Hora |\n| HoraRevisada | STRING | Hora revisada |\n| TipoIngreso | STRING | Tipo de ingreso |\n| TipoNegocio | STRING | Tipo de negocio |\n| Turno | STRING | Mañana/Tarde/Noche |\n| TurnoVenta | STRING | Turno de venta |\n\n### `Ventas.Negocios`\n| Campo | Tipo | Nota |\n|-------|------|------|\n| CodigoNegocio | STRING | PK |\n| Descripcion | STRING | Nombre negocio |\n| Zona | STRING | ALTA/BAJA |\n| TipoComida | STRING | Categoría |\n| Area | FLOAT64 | Área m² |\n| CodigoRefugio | INT64 | Código Refugio |\n| CodigoUbicacion | STRING | Ubicación |\n| Estado | FLOAT64 | Estado activo |\n| FechaApertura | DATETIME | Fecha apertura |\n| FechaCierre | DATETIME | Fecha cierre |\n| KeyCarpeta | STRING | Key carpeta |\n| TipoNegocio | STRING | Tipo negocio |\n\n### `Ventas.MontosMeta`\n| Campo | Tipo | Nota |\n|-------|------|------|\n| Fecha | DATE | Fecha meta (nativo) |\n| MontoMeta | FLOAT64 | Meta diaria S/. |\n| Mes | STRING | Nombre mes |\n| Anio | INT64 | Año |\n| nrosemana | INT64 | Número de semana |\n\n### `flujo_de_personas.Total_Puertas_Hora`\n| Campo | Tipo | Nota |\n|-------|------|------|\n| Fecha | STRING | ⚠️ Usar DATE() |\n| Entradas | INT | Ingresos |\n| Salidas | INT | Salidas |\n\n\n## Negocios válidos\n```\nBar Refugio, La 22, MR SMASH, Barrio Mancora, Bros, Belgofre, Limanesas, \nSaltao, Vikinga, Bodega Turca, Taqueado, Choza de la Anaconda, Sisa Cafe, \nHanzo, La Victoria, Curich, Anticuching, Quién pidió pollo, Patio Cavenecia, \nCaja China Criolla, Don Melchor, Nashmys, Caldos Doris, Ahumaré\n```\n\n---\n\n# WORKFLOW\n\n```\n1. Analizar consulta → ¿Está en alcance?\n2. Construir SQL → Seguir REGLAS OBLIGATORIAS\n3. Ejecutar → tool: query_bigquery\n4. ¿Error? → Corregir sintaxis → Reintentar (máx 2)\n5. Responder → Formato amigable con dato en negrita\n```\n\n---\n\n# REGLAS SQL OBLIGATORIAS\n\n## 🔴 Fechas (CRÍTICO)\n```sql\n-- ✅ SIEMPRE así:\nDATE(Fecha) = CURRENT_DATE('America/Lima')\nDATE(Fecha) = DATE_SUB(CURRENT_DATE('America/Lima'), INTERVAL 1 DAY)\nDATE(Fecha) >= DATE_SUB(CURRENT_DATE('America/Lima'), INTERVAL 7 DAY)\nDATE(Fecha) >= DATE_TRUNC(CURRENT_DATE('America/Lima'), MONTH)\n\n-- ❌ NUNCA así:\nFecha = '2025-01-15'\n```\n\n## 🔴 Alias de salida\n```sql\n-- ✅ Siempre usar 'total' para agregaciones\nSELECT SUM(Monto) AS total\nSELECT COUNT(*) AS total\n```\n\n## 🔴 Tablas completas\n```sql\n-- ✅ Nombre completo con backticks\nFROM `neat-chain-450900-a1.Ventas.sales_df`\nFROM `neat-chain-450900-a1.Ventas.Negocios`\n```\n\n## 🔴 Filtro Estado (CRÍTICO)\n```sql\n-- ✅ SIEMPRE filtrar en sales_df:\nAND (Estado = '0.0' OR Estado = '0')\n\n-- Solo registros válidos (no anulados)\n```\n\n## 🟡 JOIN para filtrar por negocio\n```sql\nSELECT SUM(V.Monto) AS total\nFROM `neat-chain-450900-a1.Ventas.sales_df` V\nINNER JOIN `neat-chain-450900-a1.Ventas.Negocios` N \n  ON V.CodigoNegocio = N.CodigoNegocio\nWHERE N.Descripcion = 'Nombre Exacto'\n```\n\n## 🟡 Fórmulas\n```sql\n-- Ticket promedio\nSUM(Monto) / SUM(Cantidad) AS total\n\n-- Transacciones\nSUM(Cantidad) AS total\n\n-- Aforo actual\nSUM(Entradas) - SUM(Salidas) AS total\n```\n\n---\n\n# PLANTILLAS SQL\n\n## 💰 Ventas\n\n**Hoy (global)**\n```sql\nSELECT SUM(Monto) AS total \nFROM `neat-chain-450900-a1.Ventas.sales_df` \nWHERE DATE(Fecha) = CURRENT_DATE('America/Lima')\n  AND (Estado = '0.0' OR Estado = '0')\n```\n\n**Ayer (global)**\n```sql\nSELECT SUM(Monto) AS total \nFROM `neat-chain-450900-a1.Ventas.sales_df` \nWHERE DATE(Fecha) = DATE_SUB(CURRENT_DATE('America/Lima'), INTERVAL 1 DAY)\n  AND (Estado = '0.0' OR Estado = '0')\n```\n\n**Negocio específico hoy**\n```sql\nSELECT SUM(V.Monto) AS total\nFROM `neat-chain-450900-a1.Ventas.sales_df` V\nINNER JOIN `neat-chain-450900-a1.Ventas.Negocios` N ON V.CodigoNegocio = N.CodigoNegocio\nWHERE N.Descripcion = '{NEGOCIO}' \n  AND DATE(V.Fecha) = CURRENT_DATE('America/Lima')\n  AND (V.Estado = '0.0' OR V.Estado = '0')\n```\n\n**Últimos 7 días**\n```sql\nSELECT SUM(Monto) AS total \nFROM `neat-chain-450900-a1.Ventas.sales_df` \nWHERE DATE(Fecha) >= DATE_SUB(CURRENT_DATE('America/Lima'), INTERVAL 7 DAY)\n  AND (Estado = '0.0' OR Estado = '0')\n```\n\n**Este mes**\n```sql\nSELECT SUM(Monto) AS total \nFROM `neat-chain-450900-a1.Ventas.sales_df` \nWHERE DATE(Fecha) >= DATE_TRUNC(CURRENT_DATE('America/Lima'), MONTH)\n  AND (Estado = '0.0' OR Estado = '0')\n```\n\n## 📊 Rankings\n\n**Top 5 negocios**\n```sql\nSELECT N.Descripcion AS negocio, SUM(V.Monto) AS total\nFROM `neat-chain-450900-a1.Ventas.sales_df` V\nINNER JOIN `neat-chain-450900-a1.Ventas.Negocios` N ON V.CodigoNegocio = N.CodigoNegocio\nWHERE DATE(V.Fecha) >= DATE_SUB(CURRENT_DATE('America/Lima'), INTERVAL 7 DAY)\n  AND (V.Estado = '0.0' OR V.Estado = '0')\nGROUP BY N.Descripcion ORDER BY total DESC LIMIT 5\n```\n\n**Top 5 productos**\n```sql\nSELECT Producto, SUM(Cantidad) AS total \nFROM `neat-chain-450900-a1.Ventas.sales_df`\nWHERE DATE(Fecha) >= DATE_SUB(CURRENT_DATE('America/Lima'), INTERVAL 7 DAY)\n  AND (Estado = '0.0' OR Estado = '0')\nGROUP BY Producto ORDER BY total DESC LIMIT 5\n```\n\n**Ventas por turno**\n```sql\nSELECT Turno, SUM(Monto) AS total \nFROM `neat-chain-450900-a1.Ventas.sales_df`\nWHERE DATE(Fecha) = CURRENT_DATE('America/Lima')\n  AND (Estado = '0.0' OR Estado = '0')\nGROUP BY Turno ORDER BY total DESC\n```\n\n## 📈 Métricas\n\n**Ticket promedio negocio**\n```sql\nSELECT SUM(V.Monto) / SUM(V.Cantidad) AS total\nFROM `neat-chain-450900-a1.Ventas.sales_df` V\nINNER JOIN `neat-chain-450900-a1.Ventas.Negocios` N ON V.CodigoNegocio = N.CodigoNegocio\nWHERE N.Descripcion = '{NEGOCIO}' \n  AND DATE(V.Fecha) = CURRENT_DATE('America/Lima')\n  AND (V.Estado = '0.0' OR V.Estado = '0')\n```\n\n**Total transacciones**\n```sql\nSELECT SUM(Cantidad) AS total \nFROM `neat-chain-450900-a1.Ventas.sales_df`\nWHERE DATE(Fecha) = CURRENT_DATE('America/Lima')\n  AND (Estado = '0.0' OR Estado = '0')\n```\n\n## 🚶 Flujo personas\n\n**Entradas hoy**\n```sql\nSELECT SUM(Entradas) AS total \nFROM `neat-chain-450900-a1.flujo_de_personas.Total_Puertas_Hora`\nWHERE DATE(Fecha) = CURRENT_DATE('America/Lima')\n```\n\n**Aforo actual**\n```sql\nSELECT SUM(Entradas) - SUM(Salidas) AS total \nFROM `neat-chain-450900-a1.flujo_de_personas.Total_Puertas_Hora`\nWHERE DATE(Fecha) = CURRENT_DATE('America/Lima')\n```\n\n**Flujo 7 días**\n```sql\nSELECT SUM(Entradas) AS total \nFROM `neat-chain-450900-a1.flujo_de_personas.Total_Puertas_Hora`\nWHERE DATE(Fecha) >= DATE_SUB(CURRENT_DATE('America/Lima'), INTERVAL 7 DAY)\n```\n\n## 🎯 Metas\n\n**Meta hoy**\n```sql\nSELECT MontoMeta AS total\nFROM `neat-chain-450900-a1.Ventas.MontosMeta`\nWHERE Fecha = CURRENT_DATE('America/Lima')\n```\n\n**% Cumplimiento**\n```sql\nSELECT ROUND(\n  (SELECT SUM(Monto) FROM `neat-chain-450900-a1.Ventas.sales_df` \n   WHERE DATE(Fecha) = CURRENT_DATE('America/Lima')\n     AND (Estado = '0.0' OR Estado = '0')) / \n  MontoMeta * 100, 2) AS total\nFROM `neat-chain-450900-a1.Ventas.MontosMeta`\nWHERE Fecha = CURRENT_DATE('America/Lima')\n```\n\n---\n\n# FORMATO RESPUESTAS\n\n## ✅ Con datos\n```\nLas ventas de hoy son **S/. 15,847.50** 💰\nEl ticket promedio es **S/. 42.30** 💰\nHan ingresado **1,247 personas** 🚶\n```\n\n## ⚠️ Faltan datos\n```\nPara ayudarte necesito que especifiques:\n• Período (hoy, ayer, semana, etc.)\n• Negocio (opcional)\n\nEjemplo: \"Ventas de Bar Refugio esta semana\"\n```\n\n## ❌ Negocio no encontrado\n```\nNo encontré ese negocio 🔍\n\nNegocios disponibles: Bar Refugio, La 22, MR SMASH, Barrio Mancora, Bros, Belgofre, Limanesas, Saltao, Vikinga, Bodega Turca, Taqueado, Choza de la Anaconda, Sisa Cafe, Hanzo, La Victoria, Curich, Anticuching, Quién pidió pollo, Patio Cavenecia, Caja China Criolla, Don Melchor, Nashmys, Caldos Doris, Ahumaré\n```\n\n## 🚫 Fuera de alcance\n```\nEso está fuera de mi especialidad 🤖\n\nPuedo ayudarte con:\n• 💰 Ventas y montos\n• 📊 Ticket promedio, rankings\n• 🚶 Flujo de personas\n```\n\n## 📭 Sin resultados\n```\nNo hay datos para esa consulta 📭\n\n¿Quieres probar con otro período o negocio?\n```\n\n---\n\n# REGLAS DE COMPORTAMIENTO\n\n## ✅ SIEMPRE\n- Usar `query_bigquery` para datos reales\n- Aplicar DATE() en campos fecha STRING\n- Incluir 'America/Lima' en funciones de fecha\n- Formatear montos: S/. X,XXX.XX\n- Dato principal en **negrita**\n- Incluir unidad (S/. o personas)\n- Respuestas concisas\n\n## ❌ NUNCA\n- Mostrar SQL al usuario\n- Inventar datos sin consultar\n- Comparar fechas sin DATE()\n- Asumir nombres de negocios\n- Responder fuera de alcance\n- Más de 2 reintentos en errores\n\n---\n\n# MANEJO ERRORES\n\n| Error | Acción |\n|-------|--------|\n| Sintaxis SQL | Corregir → Reintentar (máx 2) |\n| Negocio no existe | Sugerir nombres similares |\n| Sin resultados | Informar + sugerir otro período |\n| Falla persistente | \"Problema técnico, reformula tu pregunta\" |\n\n---\n\nProcesa la consulta del usuario."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.8,
+      "position": [
+        1328,
+        144
+      ],
+      "id": "661f5863-3ba6-40d2-b394-a6600f9cbfec",
+      "name": "AI Agent Refubot",
+      "retryOnFail": false,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "options": {
+          "maxTokens": 3000,
+          "temperature": 0.2
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatDeepSeek",
+      "typeVersion": 1,
+      "position": [
+        1152,
+        384
+      ],
+      "id": "f0a61428-4f4a-4268-b4bf-4f22454d7c5a",
+      "name": "DeepSeek Model",
+      "credentials": {
+        "deepSeekApi": {
+          "id": "XArsnbVz00tPlKgt",
+          "name": "DeepSeek account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "name": "consultar_bigquery",
+        "description": "Ejecuta consultas SQL en BigQuery para obtener datos de ventas o flujo de personas. Devuelve los resultados de la consulta.",
+        "workflowId": "Rz04Y94dmAPrG9YS",
+        "fields": {
+          "values": [
+            {
+              "name": "query",
+              "stringValue": "={{ $fromAI('query', 'The SQL query string to execute') }}"
+            }
+          ]
+        },
+        "jsonSchemaExample": ""
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 1.1,
+      "position": [
+        1200,
+        752
+      ],
+      "id": "03acf504-489e-41e7-8c6c-4022480d1d0e",
+      "name": "Tool: BigQuery"
+    },
+    {
+      "parameters": {
+        "name": "registrar_consulta",
+        "description": "Registra consultas exitosas en Google Sheets para auditoría. Parámetros: pregunta, query_sql, tipo_consulta, resultado_resumen",
+        "workflowId": {
+          "__rl": true,
+          "value": "SHEETS_SUB_WORKFLOW_ID",
+          "mode": "list"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 1.1,
+      "position": [
+        1376,
+        752
+      ],
+      "id": "26a9fb9c-70d5-4670-9f0b-ae1292147d86",
+      "name": "Tool: Google Sheets"
+    },
+    {
+      "parameters": {
+        "name": "buscar_negocio",
+        "description": "Valida si un nombre de negocio existe en la base de datos y devuelve el nombre exacto. Útil para corregir nombres.",
+        "jsCode": "const negocios = [\n  'Quién pidió pollo', 'Puerto Mancora', 'Patio Cavenecia',\n  'Caja China Criolla', 'Bros', 'Belgofre', 'Limanesas',\n  'Saltao', 'Vikinga', 'Bodega Turca', 'La 22', 'Taqueado',\n  'Choza de la Anaconda', 'MR SMASH', 'Sisa Cafe', 'Hanzo',\n  'La Victoria', 'Curich', 'Anticuching', 'Bar Refugio'\n];\n\nconst busqueda = ($input.first().json.query || '').toLowerCase();\nconst encontrado = negocios.find(n => \n  n.toLowerCase().includes(busqueda) || \n  busqueda.includes(n.toLowerCase())\n);\n\nif (encontrado) {\n  return { existe: true, nombre_exacto: encontrado };\n} else {\n  return { \n    existe: false, \n    sugerencias: negocios.slice(0, 5).join(', ')\n  };\n}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolCode",
+      "typeVersion": 1,
+      "position": [
+        1552,
+        752
+      ],
+      "id": "b4118e69-da32-4bb7-adc5-a39f14f14e2b",
+      "name": "Tool: Validar Negocio"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Actualizar memoria conversacional\nconst context = $('Preparar Contexto').first().json;\nconst agentOutput = $input.first().json;\n\nconst userMsg = { role: 'user', content: context.userMessage };\nconst assistantMsg = { \n  role: 'assistant', \n  content: agentOutput.output || agentOutput.text || 'Sin respuesta'\n};\n\n// Mantener últimas 20 interacciones\nconst newHistory = [\n  ...context.history,\n  userMsg,\n  assistantMsg\n].slice(-20);\n\nreturn [{\n  chatId: context.chatId,\n  newHistory: newHistory,\n  responseText: assistantMsg.content\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1680,
+        0
+      ],
+      "id": "b8960905-46d5-4f77-94db-4b2032976d97",
+      "name": "Actualizar Memoria"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO conversation_memory_refubot (chat_id, history)\nVALUES ($1, $2::jsonb)\nON CONFLICT (chat_id)\nDO UPDATE SET  history = EXCLUDED.history",
+        "options": {
+          "queryReplacement": "={{ $('Telegram Trigger1').item.json.message.chat.id }},{{ JSON.stringify($json.newHistory) }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1888,
+        -80
+      ],
+      "id": "0483d753-1f0e-42b5-9b66-962eee6e76b5",
+      "name": "Guardar Memoria",
+      "credentials": {
+        "postgres": {
+          "id": "LsXN9NioUiz1tmgm",
+          "name": "Postgres account 3"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Telegram Trigger1').item.json.message.chat.id }}",
+        "text": "={{ $('Actualizar Memoria').first().json.responseText }}",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        2160,
+        -64
+      ],
+      "id": "5522895d-863d-4d46-b588-04f20b86ccff",
+      "name": "Telegram: Respuesta",
+      "webhookId": "527d278a-1547-4784-aa14-2538703fd0b2",
+      "credentials": {
+        "telegramApi": {
+          "id": "Jyn6Ugu4iAg1zKv9",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Manejo inteligente de errores\nconst error = $input.first().json.error || {};\nconst errorMsg = (error.message || '').toLowerCase();\nlet response;\n\nif (errorMsg.includes('syntax') || errorMsg.includes('invalid')) {\n  response = '🤔 Hubo un problema al generar la consulta SQL. Por favor, reformula tu pregunta.';\n} \nelse if (errorMsg.includes('not found') || errorMsg.includes('no existe')) {\n  response = '😅 No encontré ese elemento. Verifica el nombre del negocio o las fechas.';\n} \nelse if (errorMsg.includes('permission') || errorMsg.includes('403')) {\n  response = '🔒 No tengo permisos en este momento. El equipo técnico ha sido notificado.';\n} \nelse if (errorMsg.includes('timeout') || errorMsg.includes('rate limit')) {\n  response = '🚦 Sistema ocupado. Intenta de nuevo en 1 minuto por favor.';\n} \nelse if (errorMsg.includes('connection')) {\n  response = '🔌 Error de conexión temporal. Reintenta en unos segundos.';\n} \nelse {\n  response = '😞 Error inesperado. Por favor, intenta reformular tu consulta.';\n}\n\nreturn [{\n  chatId: $('Preparar Contexto').first().json.chatId,\n  errorMessage: response\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1760,
+        288
+      ],
+      "id": "3d24b219-54b5-49c5-8f87-63e7bfae51d9",
+      "name": "Manejo de Errores"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Telegram Trigger1').item.json.message.chat.id }}",
+        "text": "={{ $json.errorMessage }}",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1936,
+        288
+      ],
+      "id": "39b24b6c-230a-4fb0-b1d7-a561908544e5",
+      "name": "Telegram: Error",
+      "webhookId": "562bf417-0b19-4596-b6bc-c6b60a2bebbf",
+      "credentials": {
+        "telegramApi": {
+          "id": "Jyn6Ugu4iAg1zKv9",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "## 🔧 SUB-WORKFLOWS NECESARIOS\n\n### 1. BigQuery Sub-Workflow\nCrea un workflow separado que:\n- Reciba parámetro: `query` (SQL string)\n- Ejecute en BigQuery\n- Devuelva resultados\n- ID: Copia el ID y pégalo en Tool: BigQuery\n\n### 2. Google Sheets Sub-Workflow\nCrea un workflow que:\n- Reciba: `pregunta, query_sql, tipo, resultado`\n- Append a Google Sheets\n- Devuelva confirmación\n- ID: Copia el ID y pégalo en Tool: Google Sheets\n\n### 3. PostgreSQL\nEjecuta este SQL:\n```sql\nCREATE TABLE IF NOT EXISTS conversation_memory_refubot (\n  chat_id VARCHAR(255) PRIMARY KEY,\n  history JSONB NOT NULL DEFAULT '[]'::jsonb,\n  updated_at TIMESTAMP DEFAULT NOW()\n);\n\nCREATE INDEX IF NOT EXISTS idx_updated \n  ON conversation_memory_refubot(updated_at);\n```",
+        "height": 480,
+        "width": 420,
+        "color": 6
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        1712,
+        672
+      ],
+      "id": "35c5c7bb-533a-4fc4-9b50-a38af22bd8b9",
+      "name": "Configuración",
+      "typeVersion": 1
+    },
+    {
+      "parameters": {
+        "content": "## 🚀 Refubot v4.1\n\n**Arquitectura N8N Latest**\n\n### Flujo:\n1. Telegram → Memoria\n2. Contexto enriquecido\n3. **AI Agent** (DeepSeek)\n   - Tool: BigQuery\n   - Tool: Sheets\n   - Tool: Validación\n4. Guardar memoria\n5. Responder\n\n### Requiere:\n- DeepSeek API key\n- 2 sub-workflows\n- Tabla PostgreSQL\n- Credenciales Telegram",
+        "height": 492,
+        "width": 360,
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        128,
+        -240
+      ],
+      "id": "89dd9ad5-fa58-4e3f-b67b-515194b55779",
+      "name": "Info",
+      "typeVersion": 1
+    },
+    {
+      "parameters": {
+        "updates": [
+          "message"
+        ],
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        560,
+        -32
+      ],
+      "id": "757f8e1b-71f3-4b7e-a529-4f00fa74caee",
+      "name": "Telegram Trigger1",
+      "webhookId": "285a2cb8-7cea-4344-ae39-aa2fec3f30ea",
+      "credentials": {
+        "telegramApi": {
+          "id": "Jyn6Ugu4iAg1zKv9",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "Execute a SQL query in Postgres",
+        "operation": "executeQuery",
+        "query": "CREATE TABLE IF NOT EXISTS conversation_memory_refubot (\n  chat_id VARCHAR(255) PRIMARY KEY,\n  history JSONB NOT NULL DEFAULT '[]'::jsonb,\n  updated_at TIMESTAMP DEFAULT NOW()\n);\n\nCREATE INDEX IF NOT EXISTS idx_updated \n  ON conversation_memory_refubot(updated_at);",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgresTool",
+      "typeVersion": 2.6,
+      "position": [
+        1040,
+        752
+      ],
+      "id": "c396b6ec-679b-45ce-b83e-50dd1b400d99",
+      "name": "Execute a SQL query in Postgres",
+      "credentials": {
+        "postgres": {
+          "id": "4xm30KQWZxB5S99l",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "projectId": {
+          "__rl": true,
+          "value": "neat-chain-450900-a1",
+          "mode": "list",
+          "cachedResultName": "My First Project",
+          "cachedResultUrl": "https://console.cloud.google.com/bigquery?project=neat-chain-450900-a1"
+        },
+        "sqlQuery": "{{ $fromAI('query', 'The SQL query string to execute') }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleBigQueryTool",
+      "typeVersion": 2.1,
+      "position": [
+        1392,
+        432
+      ],
+      "id": "1a713500-36c1-49f5-92c2-435b0819bd41",
+      "name": "Tool: BigQuery1",
+      "credentials": {
+        "googleBigQueryOAuth2Api": {
+          "id": "QO84MM3aK1dAvpoY",
+          "name": "Google BigQuery account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "177sDY5uIoo9870QjarNycO484V8gEcDA60utlbLEsp0",
+          "mode": "list",
+          "cachedResultName": "Sheets Logger",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/177sDY5uIoo9870QjarNycO484V8gEcDA60utlbLEsp0/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Consultas",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/177sDY5uIoo9870QjarNycO484V8gEcDA60utlbLEsp0/edit#gid=0"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "pregunta": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('pregunta', ``, 'string') }}",
+            "query_sql": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('query_sql', ``, 'string') }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "pregunta",
+              "displayName": "pregunta",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "query_sql",
+              "displayName": "query_sql",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheetsTool",
+      "typeVersion": 4.7,
+      "position": [
+        1600,
+        432
+      ],
+      "id": "15dd021d-45d9-4854-99e2-42d72f78aba4",
+      "name": "Tool: Google Sheets1",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "x8kMaGdN14Hh0Kir",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "sendChatAction",
+        "chatId": "={{ $('Telegram Trigger1').item.json.message.chat.id }}"
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1152,
+        80
+      ],
+      "id": "7aff55ea-2f11-4431-8dbf-07c9ba5c1113",
+      "name": "Send a chat action",
+      "webhookId": "31f8836d-a58a-49f8-8e5a-ade460605628",
+      "credentials": {
+        "telegramApi": {
+          "id": "Jyn6Ugu4iAg1zKv9",
+          "name": "Telegram account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Cargar Memoria": {
+      "main": [
+        [
+          {
+            "node": "Preparar Contexto",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar Contexto": {
+      "main": [
+        [
+          {
+            "node": "Send a chat action",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent Refubot": {
+      "main": [
+        [
+          {
+            "node": "Actualizar Memoria",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Manejo de Errores",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DeepSeek Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent Refubot",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Actualizar Memoria": {
+      "main": [
+        [
+          {
+            "node": "Guardar Memoria",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guardar Memoria": {
+      "main": [
+        [
+          {
+            "node": "Telegram: Respuesta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manejo de Errores": {
+      "main": [
+        [
+          {
+            "node": "Telegram: Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram Trigger1": {
+      "main": [
+        [
+          {
+            "node": "Cargar Memoria",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute a SQL query in Postgres": {
+      "ai_tool": [
+        []
+      ]
+    },
+    "Tool: Google Sheets": {
+      "ai_tool": [
+        []
+      ]
+    },
+    "Tool: BigQuery": {
+      "ai_tool": [
+        []
+      ]
+    },
+    "Tool: BigQuery1": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent Refubot",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tool: Google Sheets1": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent Refubot",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send a chat action": {
+      "main": [
+        [
+          {
+            "node": "AI Agent Refubot",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "7deccceb-89ce-4b1c-923d-13ce0e94bc66",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "0fe2d092259553ef8ee26e1e7d1ba87d8a0df8994f404066522276b2e2eae95f"
+  },
+  "id": "1hy2XiF5T5eqjMhp",
+  "tags": []
+}
