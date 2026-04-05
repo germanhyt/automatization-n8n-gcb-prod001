@@ -35,6 +35,8 @@ Asignado a Refugio Gastronómico, hub comercial con aproximadamente 20 locatario
 ### 1. AutomatizacionNotificaciones
 **Objetivo:** Asegurar cumplimiento en la entrega de reportes de ventas de locatarios.
 
+![AutomatizacionNotificaciones](assets/AutomatizacionNotificaciones.png)
+
 - Orquesta validaciones diarias en n8n con Schedule Trigger y procesamiento por lotes.
 - Consulta Google Drive para detectar ultima carga por locatario y medir horas de desfase.
 - Construye mensajes personalizados y envia alertas automaticas via Gmail cuando se exceden 24 horas sin reporte.
@@ -43,6 +45,8 @@ Asignado a Refugio Gastronómico, hub comercial con aproximadamente 20 locatario
 ### 2. RefubotConsultas
 **Objetivo:** Automatizar atencion comercial para reservas, eventos e informacion general.
 
+![RefubotConsultas](assets/RefubotConsultas.png)
+
 - Implementa agente de IA con herramientas para registrar leads en Google Sheets.
 - Gestiona flujos conversacionales de WhatsApp con validacion de datos obligatorios.
 - Dispara notificaciones automatizadas por correo al equipo comercial en cada reserva o evento registrado.
@@ -50,6 +54,8 @@ Asignado a Refugio Gastronómico, hub comercial con aproximadamente 20 locatario
 
 ### 3. RefubotData
 **Objetivo:** Habilitar consultas analiticas internas en lenguaje natural para Operaciones.
+
+![RefubotData](assets/RefubotData.png)
 
 - Usa agente con memoria conversacional en PostgreSQL para continuidad de contexto.
 - Ejecuta consultas en BigQuery para ventas, ticket promedio, flujo de personas y metas.
